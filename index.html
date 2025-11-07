@@ -136,7 +136,8 @@
         this.state = {
           cliente: { nombre: '', empresa: '', direccion: '' },
           productos: [ { descripcion: '', monto: '' } ],
-          mostrarVista: false
+          mostrarVista: false,
+          incluirIGV: true
         };
         this.loadFromStorage();
         this.render();
@@ -145,7 +146,14 @@
       loadFromStorage() {
         const saved = localStorage.getItem('cotizacion_draft');
         if (saved) {
-          try { this.state = { ...this.state, ...JSON.parse(saved) }; }
+          try {
+            const parsed = JSON.parse(saved);
+            this.state = {
+              ...this.state,
+              ...parsed,
+              incluirIGV: typeof parsed.incluirIGV === 'boolean' ? parsed.incluirIGV : this.state.incluirIGV
+            };
+          }
           catch(e) { console.error('Error al cargar borrador:', e); }
         }
       }
@@ -153,7 +161,8 @@
       saveToStorage() {
         localStorage.setItem('cotizacion_draft', JSON.stringify({
           cliente: this.state.cliente,
-          productos: this.state.productos
+          productos: this.state.productos,
+          incluirIGV: this.state.incluirIGV
         }));
       }
 
@@ -186,12 +195,16 @@
         this.setState({ cliente });
       }
 
+      toggleIGV(checked) {
+        this.setState({ incluirIGV: checked });
+      }
+
       calcularSubtotal() {
         return this.state.productos.reduce((sum, p) => sum + (parseFloat(p.monto) || 0), 0);
       }
 
       calcularIGV() {
-        return this.calcularSubtotal() * 0.18;
+        return this.state.incluirIGV ? this.calcularSubtotal() * 0.18 : 0;
       }
 
       calcularTotal() {
@@ -219,8 +232,8 @@ async generarYCompartirPDF() {
   });
   document.body.appendChild(clone);
 
-  // 2) Capturar con buena nitidez
-  const scale = Math.max(2, Math.ceil(window.devicePixelRatio || 1));
+  // 2) Capturar con buena nitidez pero controlando el peso final
+  const scale = 1.5; // reducir la resolución evita imágenes extremadamente pesadas
   const canvas = await html2canvas(clone, {
     scale,
     useCORS: true,
@@ -233,12 +246,12 @@ async generarYCompartirPDF() {
   document.body.removeChild(clone);
 
   // 3) Crear PDF ocupando toda la hoja (proporción ya coincide)
-  const imgData = canvas.toDataURL('image/png');
+  const imgData = canvas.toDataURL('image/jpeg', 0.75);
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF('p', 'mm', 'a4');
   const pdfW = pdf.internal.pageSize.getWidth();
   const pdfH = pdf.internal.pageSize.getHeight();
-  pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
+  pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH);
 
   // 4) Compartir o descargar
   const nombreCliente = this.state?.cliente?.nombre || 'Cliente';
@@ -329,14 +342,22 @@ async generarYCompartirPDF() {
                         <span class="text-gray-600">Subtotal:</span>
                         <span class="font-medium">S/ ${this.calcularSubtotal().toFixed(2)}</span>
                       </div>
-                      <div class="flex justify-between">
-                        <span class="text-gray-600">IGV (18%):</span>
-                        <span class="font-medium">S/ ${this.calcularIGV().toFixed(2)}</span>
-                      </div>
+                      ${this.state.incluirIGV ? `
+                        <div class="flex justify-between">
+                          <span class="text-gray-600">IGV (18%):</span>
+                          <span class="font-medium">S/ ${this.calcularIGV().toFixed(2)}</span>
+                        </div>
+                      ` : ''}
                       <div class="flex justify-between text-lg font-bold text-pink-600 pt-2 border-t-2 border-pink-200">
                         <span>TOTAL:</span>
                         <span>S/ ${this.calcularTotal().toFixed(2)}</span>
                       </div>
+                      <label class="flex items-center justify-between pt-2 text-sm text-gray-600">
+                        <span>Aplicar IGV (18%)</span>
+                        <input type="checkbox" ${this.state.incluirIGV ? 'checked' : ''}
+                          onchange="app.toggleIGV(this.checked)"
+                          class="w-4 h-4 text-pink-500 border-gray-300 rounded focus:ring-pink-400" />
+                      </label>
                     </div>
                   </div>
 
@@ -415,14 +436,19 @@ async generarYCompartirPDF() {
                       <span class="font-semibold text-gray-700">Subtotal</span>
                       <span class="font-semibold">S/ ${this.calcularSubtotal().toFixed(2)}</span>
                     </div>
-                    <div class="flex justify-between py-2 text-sm">
-                      <span class="font-semibold text-gray-700">IGV (18%)</span>
-                      <span class="font-semibold">S/ ${this.calcularIGV().toFixed(2)}</span>
-                    </div>
+                    ${this.state.incluirIGV ? `
+                      <div class="flex justify-between py-2 text-sm">
+                        <span class="font-semibold text-gray-700">IGV (18%)</span>
+                        <span class="font-semibold">S/ ${this.calcularIGV().toFixed(2)}</span>
+                      </div>
+                    ` : ''}
                     <div class="flex justify-between py-3 text-xl font-bold text-pink-600 border-t-2 border-gray-300">
                       <span>TOTAL</span>
                       <span>S/ ${this.calcularTotal().toFixed(2)}</span>
                     </div>
+                    ${this.state.incluirIGV ? '' : `
+                      <p class="pt-2 text-xs text-gray-500 text-right">IGV no aplicado en esta cotización.</p>
+                    `}
                   </div>
                 </section>
 
