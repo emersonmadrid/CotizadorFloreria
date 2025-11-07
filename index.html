@@ -364,11 +364,6 @@ async generarYCompartirPDF() {
                   <div class="space-y-3">
                     <button onclick="app.setState({ mostrarVista: true })"
                       class="w-full bg-purple-500 text-white py-3 rounded-lg flex items-center justify-center gap-2 hover:bg-purple-600 transition font-medium">👁️ Vista Previa</button>
-                    <button onclick="app.generarYCompartirPDF()"
-                      class="w-full bg-pink-600 text-white py-3 rounded-lg flex items-center justify-center gap-2 hover:bg-pink-700 transition font-medium"
-                      ${!this.state.cliente.nombre || this.state.productos.some(p => !p.descripcion || !p.monto) ? 'disabled opacity-50' : ''}>
-                      📄 Generar PDF y Compartir
-                    </button>
                   </div>
                 </div>
               </div>
