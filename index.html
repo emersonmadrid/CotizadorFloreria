@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#ec4899">
+  <meta name="description" content="Generador de cotizaciones para Arte y Distinción con Flores">
+  <title>Cotizador - Arte y Distinción</title>
+
+  <!-- PWA Manifest & Icons -->
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/png" href="./icons/icon-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <style>
+    @media print {
+      body * { visibility: hidden; }
+      #cotizacion-preview, #cotizacion-preview * { visibility: visible; }
+      #cotizacion-preview { position: absolute; left: 0; top: 0; }
+    }
+    .install-prompt {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: linear-gradient(135deg, #ec4899, #8b5cf6); color: white;
+      padding: 16px 24px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+      z-index: 1000; display: none; align-items: center; gap: 12px; animation: slideUp 0.5s ease;
+    }
+    @keyframes slideUp {
+      from { transform: translateX(-50%) translateY(100px); opacity: 0; }
+      to { transform: translateX(-50%) translateY(0); opacity: 1; }
+    }
+    .offline-indicator {
+      position: fixed; top: 10px; right: 10px; background: #ef4444; color: white;
+      padding: 8px 16px; border-radius: 8px; font-size: 14px; display: none; z-index: 1000;
+    }
+    .online-indicator { background: #10b981; }
+  </style>
+</head>
+<body class="bg-gray-50">
+  <!-- Indicador de conexión -->
+  <div id="connection-indicator" class="offline-indicator">
+    <span id="connection-text">Sin conexión</span>
+  </div>
+
+  <!-- Prompt de instalación -->
+  <div id="install-prompt" class="install-prompt">
+    <span>📱</span>
+    <span>Instala esta app para usar offline</span>
+    <button id="install-button" class="bg-white text-pink-600 px-4 py-2 rounded-lg font-semibold hover:bg-gray-100 transition">Instalar</button>
+    <button id="close-prompt" class="text-white hover:text-gray-200">✕</button>
+  </div>
+
+  <div id="app"></div>
+
+  <script>
+    // ============================================
+    // PWA CONFIGURATION (manifest is linked as file; only SW registration below)
+    // ============================================
+    const APP_VERSION = '1.0.0';
+
+    // ============================================
+    // SERVICE WORKER REGISTER
+    // ============================================
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js')
+        .then(registration => console.log('✅ Service Worker registrado:', registration.scope))
+        .catch(error => console.log('❌ Error al registrar Service Worker:', error));
+    }
+
+    // ============================================
+    // INSTALL PROMPT
+    // ============================================
+    let deferredPrompt;
+    const installPrompt = document.getElementById('install-prompt');
+    const installButton = document.getElementById('install-button');
+    const closePrompt = document.getElementById('close-prompt');
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      installPrompt.style.display = 'flex';
+    });
+
+    installButton.addEventListener('click', async () => {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        console.log(`Instalación: ${outcome}`);
+        deferredPrompt = null;
+        installPrompt.style.display = 'none';
+      }
+    });
+
+    closePrompt.addEventListener('click', () => {
+      installPrompt.style.display = 'none';
+    });
+
+    window.addEventListener('appinstalled', () => {
+      console.log('✅ PWA instalada exitosamente');
+      installPrompt.style.display = 'none';
+    });
+
+    // ============================================
+    // CONNECTION INDICATOR
+    // ============================================
+    const connectionIndicator = document.getElementById('connection-indicator');
+    const connectionText = document.getElementById('connection-text');
+    function updateConnectionStatus() {
+      if (navigator.onLine) {
+        connectionIndicator.classList.add('online-indicator');
+        connectionText.textContent = '✓ Conectado';
+        connectionIndicator.style.display = 'block';
+        setTimeout(() => { connectionIndicator.style.display = 'none'; }, 2000);
+      } else {
+        connectionIndicator.classList.remove('online-indicator');
+        connectionText.textContent = '⚠ Sin conexión (modo offline)';
+        connectionIndicator.style.display = 'block';
+      }
+    }
+    window.addEventListener('online', updateConnectionStatus);
+    window.addEventListener('offline', updateConnectionStatus);
+
+    // ============================================
+    // MAIN APPLICATION
+    // ============================================
+    class CotizadorApp {
+      constructor() {
+        this.state = {
+          cliente: { nombre: '', empresa: '', direccion: '' },
+          productos: [ { descripcion: '', monto: '' } ],
+          mostrarVista: false
+        };
+        this.loadFromStorage();
+        this.render();
+      }
+
+      loadFromStorage() {
+        const saved = localStorage.getItem('cotizacion_draft');
+        if (saved) {
+          try { this.state = { ...this.state, ...JSON.parse(saved) }; }
+          catch(e) { console.error('Error al cargar borrador:', e); }
+        }
+      }
+
+      saveToStorage() {
+        localStorage.setItem('cotizacion_draft', JSON.stringify({
+          cliente: this.state.cliente,
+          productos: this.state.productos
+        }));
+      }
+
+      setState(newState) {
+        this.state = { ...this.state, ...newState };
+        this.saveToStorage();
+        this.render();
+      }
+
+      agregarProducto() {
+        const productos = [...this.state.productos, { descripcion: '', monto: '' }];
+        this.setState({ productos });
+      }
+
+      eliminarProducto(index) {
+        if (this.state.productos.length > 1) {
+          const productos = this.state.productos.filter((_, i) => i !== index);
+          this.setState({ productos });
+        }
+      }
+
+      actualizarProducto(index, campo, valor) {
+        const productos = [...this.state.productos];
+        productos[index][campo] = valor;
+        this.setState({ productos });
+      }
+
+      actualizarCliente(campo, valor) {
+        const cliente = { ...this.state.cliente, [campo]: valor };
+        this.setState({ cliente });
+      }
+
+      calcularSubtotal() {
+        return this.state.productos.reduce((sum, p) => sum + (parseFloat(p.monto) || 0), 0);
+      }
+
+      calcularIGV() {
+        return this.calcularSubtotal() * 0.18;
+      }
+
+      calcularTotal() {
+        return this.calcularSubtotal() + this.calcularIGV();
+      }
+
+      async generarYCompartirPDF() {
+        this.setState({ mostrarVista: true });
+        setTimeout(async () => {
+          try {
+            const element = document.getElementById('cotizacion-preview');
+            const canvas = await html2canvas(element, { scale: 2, useCORS: true, logging: false });
+            const imgData = canvas.toDataURL('image/png');
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            const pdfBlob = pdf.output('blob');
+            const file = new File([pdfBlob], `Cotizacion_${this.state.cliente.nombre || 'Cliente'}.pdf`, { type: 'application/pdf' });
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+              await navigator.share({ title: 'Cotización - Arte y Distinción', text: `Cotización para ${this.state.cliente.nombre}`, files: [file] });
+            } else {
+              pdf.save(`Cotizacion_${this.state.cliente.nombre || 'Cliente'}.pdf`);
+              alert('PDF descargado. En este navegador no está disponible compartir directamente.');
+            }
+          } catch (error) {
+            console.error('Error:', error);
+            alert('Hubo un error al generar el PDF. Por favor intenta nuevamente.');
+          }
+        }, 100);
+      }
+
+      render() {
+        const app = document.getElementById('app');
+        const fechaActual = new Date().toLocaleDateString('es-PE', { year: 'numeric', month: 'long', day: 'numeric' });
+
+        if (!this.state.mostrarVista) {
+          app.innerHTML = `
+            <div class="min-h-screen bg-gradient-to-br from-pink-50 to-purple-50 p-4">
+              <div class="max-w-2xl mx-auto">
+                <div class="bg-white rounded-2xl shadow-xl p-6 mb-6">
+                  <div class="text-center mb-6">
+                    <h1 class="text-3xl font-bold text-pink-600 mb-2">🌸 Arte y Distinción con Flores</h1>
+                    <p class="text-gray-600">Generador de Cotizaciones PWA</p>
+                    <p class="text-xs text-gray-400 mt-2">✓ Funciona sin internet después de instalarse</p>
+                  </div>
+
+                  <div class="mb-6">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                      <span class="bg-pink-100 text-pink-600 rounded-full w-8 h-8 flex items-center justify-center mr-2 text-sm">1</span>
+                      Datos del Cliente
+                    </h2>
+                    <div class="space-y-3">
+                      <input type="text" placeholder="Nombre del cliente *"
+                        class="w-full p-3 border-2 border-gray-200 rounded-lg focus:border-pink-400 focus:outline-none"
+                        value="${this.state.cliente.nombre}"
+                        onchange="app.actualizarCliente('nombre', this.value)"/>
+                      <input type="text" placeholder="Empresa"
+                        class="w-full p-3 border-2 border-gray-200 rounded-lg focus:border-pink-400 focus:outline-none"
+                        value="${this.state.cliente.empresa}"
+                        onchange="app.actualizarCliente('empresa', this.value)"/>
+                      <input type="text" placeholder="Dirección"
+                        class="w-full p-3 border-2 border-gray-200 rounded-lg focus:border-pink-400 focus:outline-none"
+                        value="${this.state.cliente.direccion}"
+                        onchange="app.actualizarCliente('direccion', this.value)"/>
+                    </div>
+                  </div>
+
+                  <div class="mb-6">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-4 flex items-center justify-between">
+                      <span class="flex items-center">
+                        <span class="bg-pink-100 text-pink-600 rounded-full w-8 h-8 flex items-center justify-center mr-2 text-sm">2</span>
+                        Productos/Servicios
+                      </span>
+                      <button onclick="app.agregarProducto()"
+                        class="bg-pink-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-pink-600 transition text-sm">➕ Agregar</button>
+                    </h2>
+
+                    ${this.state.productos.map((prod, index) => `
+                      <div class="mb-4 p-4 bg-gray-50 rounded-lg">
+                        <div class="flex justify-between items-center mb-3">
+                          <span class="text-sm font-medium text-gray-600">Producto ${index + 1}</span>
+                          ${this.state.productos.length > 1 ? `
+                            <button onclick="app.eliminarProducto(${index})" class="text-red-500 hover:text-red-700">🗑️</button>
+                          ` : ''}
+                        </div>
+                        <textarea placeholder="Descripción del producto/servicio *"
+                          class="w-full p-3 border-2 border-gray-200 rounded-lg focus:border-pink-400 focus:outline-none mb-3 min-h-[80px]"
+                          onchange="app.actualizarProducto(${index}, 'descripcion', this.value)">${prod.descripcion}</textarea>
+                        <input type="number" placeholder="Monto (sin IGV) *"
+                          class="w-full p-3 border-2 border-gray-200 rounded-lg focus:border-pink-400 focus:outline-none"
+                          value="${prod.monto}"
+                          onchange="app.actualizarProducto(${index}, 'monto', this.value)"/>
+                      </div>
+                    `).join('')}
+                  </div>
+
+                  <div class="bg-pink-50 rounded-lg p-4 mb-6">
+                    <h3 class="font-semibold text-gray-800 mb-3">Resumen</h3>
+                    <div class="space-y-2 text-sm">
+                      <div class="flex justify-between">
+                        <span class="text-gray-600">Subtotal:</span>
+                        <span class="font-medium">S/ ${this.calcularSubtotal().toFixed(2)}</span>
+                      </div>
+                      <div class="flex justify-between">
+                        <span class="text-gray-600">IGV (18%):</span>
+                        <span class="font-medium">S/ ${this.calcularIGV().toFixed(2)}</span>
+                      </div>
+                      <div class="flex justify-between text-lg font-bold text-pink-600 pt-2 border-t-2 border-pink-200">
+                        <span>TOTAL:</span>
+                        <span>S/ ${this.calcularTotal().toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="space-y-3">
+                    <button onclick="app.setState({ mostrarVista: true })"
+                      class="w-full bg-purple-500 text-white py-3 rounded-lg flex items-center justify-center gap-2 hover:bg-purple-600 transition font-medium">👁️ Vista Previa</button>
+                    <button onclick="app.generarYCompartirPDF()"
+                      class="w-full bg-pink-600 text-white py-3 rounded-lg flex items-center justify-center gap-2 hover:bg-pink-700 transition font-medium"
+                      ${!this.state.cliente.nombre || this.state.productos.some(p => !p.descripcion || !p.monto) ? 'disabled opacity-50' : ''}>
+                      📄 Generar PDF y Compartir
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+        } else {
+          app.innerHTML = `
+            <div class="max-w-4xl mx-auto p-4">
+              <div class="mb-4 flex gap-3">
+                <button onclick="app.setState({ mostrarVista: false })" class="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600 transition">← Volver al Formulario</button>
+                <button onclick="app.generarYCompartirPDF()" class="bg-pink-600 text-white px-6 py-2 rounded-lg flex items-center gap-2 hover:bg-pink-700 transition flex-1">📄 Generar PDF y Compartir</button>
+              </div>
+
+              <div id="cotizacion-preview" class="bg-white p-8">
+                <header class="flex justify-between items-start border-b-2 border-gray-200 pb-5 mb-6">
+                  <div class="max-w-[60%]">
+                    <h1 class="text-2xl font-bold text-pink-600 mb-2">Arte y Distinción con Flores</h1>
+                    <p class="text-sm text-gray-600 mb-1">Luisa Soledad Macavilca Zavaleta</p>
+                    <p class="text-sm text-gray-600 mb-1">Av. Las Flores s/n - Lima</p>
+                    <p class="text-sm text-gray-600">📞 993 898 777 | 📧 macazava62@hotmail.com</p>
+                  </div>
+                  <div class="text-right">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-2">COTIZACIÓN</h2>
+                    <p class="text-sm text-gray-600"><strong>Fecha:</strong> ${new Date().toLocaleDateString('es-PE', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                  </div>
+                </header>
+
+                <section class="flex justify-between mb-6">
+                  <div class="w-[48%] bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <h3 class="font-semibold text-gray-800 border-b border-gray-300 pb-2 mb-3">CLIENTE</h3>
+                    <p class="text-sm mb-1"><strong>Señor(a):</strong> ${this.state.cliente.nombre}</p>
+                    ${this.state.cliente.empresa ? `<p class="text-sm mb-1"><strong>Empresa:</strong> ${this.state.cliente.empresa}</p>` : ''}
+                    ${this.state.cliente.direccion ? `<p class="text-sm"><strong>Dirección:</strong> ${this.state.cliente.direccion}</p>` : ''}
+                  </div>
+                  <div class="w-[48%] bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <h3 class="font-semibold text-gray-800 border-b border-gray-300 pb-2 mb-3">VENDEDOR</h3>
+                    <p class="text-sm mb-1"><strong>Empresa:</strong> Arte y Distinción con Flores</p>
+                    <p class="text-sm mb-1"><strong>Atención:</strong> Luisa Soledad Macavilca Zavaleta</p>
+                    <p class="text-sm"><strong>Teléfono:</strong> 993 898 777</p>
+                  </div>
+                </section>
+
+                <section class="mb-6">
+                  <table class="w-full border-collapse">
+                    <thead>
+                      <tr class="bg-gray-100">
+                        <th class="text-left p-3 text-xs uppercase text-gray-600">Concepto</th>
+                        <th class="text-right p-3 text-xs uppercase text-gray-600">Total (S/)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${this.state.productos.map(prod => `
+                        <tr class="border-b border-gray-200">
+                          <td class="p-3"><p class="text-sm whitespace-pre-line">${prod.descripcion}</p></td>
+                          <td class="p-3 text-right text-sm">${parseFloat(prod.monto).toFixed(2)}</td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </section>
+
+                <section class="flex justify-end mb-6">
+                  <div class="w-[40%] min-w-[250px]">
+                    <div class="flex justify-between py-2 text-sm">
+                      <span class="font-semibold text-gray-700">Subtotal</span>
+                      <span class="font-semibold">S/ ${this.calcularSubtotal().toFixed(2)}</span>
+                    </div>
+                    <div class="flex justify-between py-2 text-sm">
+                      <span class="font-semibold text-gray-700">IGV (18%)</span>
+                      <span class="font-semibold">S/ ${this.calcularIGV().toFixed(2)}</span>
+                    </div>
+                    <div class="flex justify-between py-3 text-xl font-bold text-pink-600 border-t-2 border-gray-300">
+                      <span>TOTAL</span>
+                      <span>S/ ${this.calcularTotal().toFixed(2)}</span>
+                    </div>
+                  </div>
+                </section>
+
+                <footer class="flex justify-between text-xs border-t-2 border-gray-200 pt-5 text-gray-600">
+                  <div class="w-[55%]">
+                    <h4 class="font-semibold text-gray-800 text-sm mb-2">Datos Bancarios</h4>
+                    <p class="mb-1"><strong>Banco:</strong> BCP</p>
+                    <p class="mb-1"><strong>N° Cuenta:</strong> 191-22203532-0-09</p>
+                    <p class="mb-3"><strong>CCI:</strong> 00219112220353200951</p>
+                    <p class="mb-1"><strong>Banco:</strong> Interbank</p>
+                    <p class="mb-1"><strong>N° Cuenta:</strong> 330-3350256854</p>
+                    <p><strong>CCI:</strong> 00333001335025685485</p>
+                  </div>
+                  <div class="w-[40%] text-right">
+                    <h4 class="font-semibold text-gray-800 text-sm mb-2">Atentamente,</h4>
+                    <p class="mb-1">Luisa Soledad Macavilca Zavaleta</p>
+                    <p>Arte y Distinción con Flores</p>
+                  </div>
+                </footer>
+              </div>
+            </div>
+          `;
+        }
+      }
+    }
+
+    // Inicializar la aplicación
+    const app = new CotizadorApp();
+    window.app = app;
+    console.log('✅ PWA Cotizador cargada correctamente');
+    console.log('📱 Instala esta app para usarla offline');
+  </script>
+</body>
+</html>
