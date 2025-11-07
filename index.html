@@ -233,7 +233,7 @@ async generarYCompartirPDF() {
   document.body.appendChild(clone);
 
   // 2) Capturar con buena nitidez pero controlando el peso final
-  const scale = 4; // reducir la resolución evita imágenes extremadamente pesadas
+  const scale = 3; // reducir la resolución evita imágenes extremadamente pesadas
   const canvas = await html2canvas(clone, {
     scale,
     useCORS: true,
@@ -280,7 +280,7 @@ async generarYCompartirPDF() {
               <div class="max-w-2xl mx-auto">
                 <div class="bg-white rounded-2xl shadow-xl p-6 mb-6">
                 <div class="text-center mb-6">
-                    <img src="./icons/logo1.png" alt="Logo Arte y Distinción" class="mx-auto w-24 h-24 mb-4">
+                    <img src="./icons/logo1.png" alt="Arte y Distinción en Flores" class="mx-auto h-28 object-contain mb-4">
                     <h1 class="text-3xl font-bold text-pink-600 mb-2">🌸 Arte y Distinción con Flores</h1>
                     <p class="text-gray-600">Generador de Cotizaciones PWA</p>
                     <p class="text-xs text-gray-400 mt-2">✓ Funciona sin internet después de instalarse</p>
@@ -379,22 +379,19 @@ async generarYCompartirPDF() {
               </div>
 
               <div id="cotizacion-preview" class="bg-white p-8">
-                <header class="flex justify-between items-start border-b-2 border-gray-200 pb-5 mb-6">
-                  <div class="max-w-[60%] flex items-center gap-4"> 
-                        <img src="./icons/logo1.png" alt="Logo" class="w-16 h-16">
-                        <div>
-                            <h1 class="text-2xl font-bold text-pink-600 mb-2">Arte y Distinción con Flores</h1>
-                            <p class="text-sm text-gray-600 mb-1">Luisa Soledad Macavilca Zavaleta</p>
-                            <p class="text-sm text-gray-600 mb-1">Av. Las Flores s/n - Lima</p>
-                            <p class="text-sm text-gray-600">📞 993 898 777 | 📧 macazava62@hotmail.com</p>
-                        </div>
+              <header class="flex justify-between items-start border-b-2 border-gray-200 pb-5 mb-6">
+                  <div class="max-w-[60%] flex items-center gap-3"> <img src="./icons/logo1.png" alt="Logo" class="h-16 object-contain"> <div>
+                          <h1 class="text-2xl font-bold text-pink-600 mb-2">Arte y Distinción con Flores</h1>
+                          <p class="text-sm text-gray-600 mb-1">Luisa Soledad Macavilca Zavaleta</p>
+                          <p class="text-sm text-gray-600 mb-1">Av. Las Flores s/n - Lima</p>
+                          <p class="text-sm text-gray-600">📞 993 898 777 | 📧 macazava62@hotmail.com</p>
+                      </div>
                   </div>
                   <div class="text-right">
-                    <h2 class="text-3xl font-bold text-gray-800 mb-2">COTIZACIÓN</h2>
-                    <p class="text-sm text-gray-600"><strong>Fecha:</strong> ${new Date().toLocaleDateString('es-PE', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                      <h2 class="text-3xl font-bold text-gray-800 mb-2">COTIZACIÓN</h2>
+                        <p class="text-sm text-gray-600"><strong>Fecha:</strong> ${new Date().toLocaleDateString('es-PE', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
                   </div>
-                </header>
-
+              </header>
                 <section class="flex justify-between mb-6">
                   <div class="w-[48%] bg-gray-50 p-4 rounded-lg border border-gray-200">
                     <h3 class="font-semibold text-gray-800 border-b border-gray-300 pb-2 mb-3">CLIENTE</h3>
