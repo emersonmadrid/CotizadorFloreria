@@ -233,7 +233,7 @@ async generarYCompartirPDF() {
   document.body.appendChild(clone);
 
   // 2) Capturar con buena nitidez pero controlando el peso final
-  const scale = 1.5; // reducir la resolución evita imágenes extremadamente pesadas
+  const scale = 4; // reducir la resolución evita imágenes extremadamente pesadas
   const canvas = await html2canvas(clone, {
     scale,
     useCORS: true,
