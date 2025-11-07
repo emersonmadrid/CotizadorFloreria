@@ -219,8 +219,8 @@ async generarYCompartirPDF() {
   });
   document.body.appendChild(clone);
 
-  // 2) Capturar con buena nitidez
-  const scale = Math.max(2, Math.ceil(window.devicePixelRatio || 1));
+  // 2) Capturar con buena nitidez pero controlando el peso final
+  const scale = 1.5; // reducir la resolución evita imágenes extremadamente pesadas
   const canvas = await html2canvas(clone, {
     scale,
     useCORS: true,
@@ -233,12 +233,12 @@ async generarYCompartirPDF() {
   document.body.removeChild(clone);
 
   // 3) Crear PDF ocupando toda la hoja (proporción ya coincide)
-  const imgData = canvas.toDataURL('image/png');
+  const imgData = canvas.toDataURL('image/jpeg', 0.75);
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF('p', 'mm', 'a4');
   const pdfW = pdf.internal.pageSize.getWidth();
   const pdfH = pdf.internal.pageSize.getHeight();
-  pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
+  pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH);
 
   // 4) Compartir o descargar
   const nombreCliente = this.state?.cliente?.nombre || 'Cliente';
